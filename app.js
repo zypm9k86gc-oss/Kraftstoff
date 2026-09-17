@@ -52,28 +52,41 @@ $$('[data-sort]').forEach((button) => button.addEventListener("click", () => {
 
 let cameraStream = null;
 let cameraRequest = 0;
+let cameraReadyTimer;
 const cameraDialog = $("#cameraDialog");
 const cameraVideo = $("#cameraVideo");
 elements.photoDrop.addEventListener("click", openCamera);
+$("#cameraAgain").addEventListener("click", openCamera);
+$("#cameraRetry").addEventListener("click", () => {
+  stopCamera();
+  openCamera(true);
+});
 $("#cameraClose").addEventListener("click", () => cameraDialog.close());
 cameraDialog.addEventListener("close", stopCamera);
-cameraVideo.addEventListener("loadeddata", () => {
-  if (!cameraDialog.open || !cameraVideo.videoWidth) return;
+function cameraReady() {
+  if (!cameraDialog.open || !cameraStream || !cameraVideo.videoWidth || cameraVideo.readyState < 2 || cameraVideo.paused) return;
+  clearTimeout(cameraReadyTimer);
   $("#cameraCapture").disabled = false;
   $("#cameraStatus").textContent = "Vier Werte im Raster ausrichten und aufnehmen.";
+}
+cameraVideo.addEventListener("playing", cameraReady);
+cameraVideo.addEventListener("loadeddata", cameraReady);
+cameraVideo.addEventListener("waiting", () => {
+  $("#cameraCapture").disabled = true;
+  $("#cameraStatus").textContent = "Kamerabild lädt … Bei schwarzem Bild bitte Kamera neu starten.";
 });
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden && cameraDialog.open) cameraDialog.close();
+  if (document.hidden && cameraStream && cameraDialog.open) cameraDialog.close();
 });
 window.addEventListener("pagehide", stopCamera);
 $("#cameraCapture").addEventListener("click", captureCamera);
 
-async function openCamera() {
-  if (state.scanning || cameraDialog.open) return;
+async function openCamera(restart = false) {
+  if (state.scanning || (cameraDialog.open && restart !== true)) return;
   const request = ++cameraRequest;
   $("#cameraCapture").disabled = true;
   $("#cameraStatus").textContent = "Kamerazugriff bitte erlauben …";
-  cameraDialog.showModal();
+  if (!cameraDialog.open) cameraDialog.showModal();
   try {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable");
     const stream = await navigator.mediaDevices.getUserMedia({ audio: false,
@@ -83,8 +96,16 @@ async function openCamera() {
       return;
     }
     cameraStream = stream;
+    cameraVideo.muted = true;
+    cameraVideo.playsInline = true;
     cameraVideo.srcObject = stream;
+    cameraReadyTimer = setTimeout(() => {
+      if (request === cameraRequest && cameraDialog.open && $("#cameraCapture").disabled) {
+        $("#cameraStatus").textContent = "Noch kein Kamerabild. Bitte Kamera neu starten oder ein vorhandenes Foto auswählen.";
+      }
+    }, 8000);
     await cameraVideo.play();
+    if (request === cameraRequest) cameraReady();
   } catch (error) {
     if (request !== cameraRequest) return;
     stopCamera();
@@ -93,6 +114,7 @@ async function openCamera() {
 }
 
 function stopCamera() {
+  clearTimeout(cameraReadyTimer);
   cameraRequest++;
   cameraStream?.getTracks().forEach(track => track.stop());
   cameraStream = null;
@@ -110,7 +132,7 @@ function cameraSourceRect(sourceWidth, sourceHeight, viewWidth, viewHeight, grid
 }
 
 async function captureCamera() {
-  if (!cameraStream || !cameraVideo.videoWidth || cameraVideo.readyState < 2) return;
+  if (!cameraStream || !cameraVideo.videoWidth || cameraVideo.readyState < 2 || cameraVideo.paused) return;
   $("#cameraCapture").disabled = true;
   try {
     const view = cameraVideo.getBoundingClientRect();
@@ -331,7 +353,7 @@ function parseFieldText(raw, field) {
     return match ? `${Number(match[1])}:${match[2]}` : undefined;
   }
   // Units are optional: position, not the presence of km or l, determines the field.
-  const withoutUnits = text.replace(/(?:l|i|\||v)\s*\/?\s*100\s*k?m/gi, "");
+    const withoutUnits = text.replace(/(?:l|i|1|\||v)\s*\/?\s*100\s*k?m/gi, "");
   const matches = withoutUnits.match(/\d+(?:\.\d+)?/g) || [];
   if (matches.length !== 1) return undefined;
   const value = Number(matches[0]);

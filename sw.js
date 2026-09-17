@@ -1,4 +1,4 @@
-const CACHE = "fahrtwert-v5-camera-grid";
+const CACHE = "fahrtwert-v6-camera-recovery";
 const APP_SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icon.svg", "./icon-180.png", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {

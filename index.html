@@ -58,11 +58,13 @@
                 <p id="cameraStatus" role="status">Kamera wird geöffnet …</p>
                 <div class="camera-actions"><button id="cameraCapture" class="primary-button" type="button" disabled>Aufnehmen und erkennen</button>
                 <button id="cameraClose" class="small-button" type="button">Schließen</button></div>
+                <button id="cameraRetry" class="small-button" type="button">Kamera neu starten</button>
               </dialog>
               <div class="photo-preview" id="photoPreview" hidden>
                 <img id="previewImage" alt="Ausgewähltes Foto des Bordcomputers" />
                 <div class="scan-line" aria-hidden="true"></div>
                 <div class="photo-actions">
+                  <button class="small-button" id="cameraAgain" type="button">Kamera öffnen</button>
                   <label class="small-button" for="photoInput">Anderes Bild</label>
                   <button class="small-button accent" id="scanAgainButton" type="button">Werte erkennen</button>
                 </div>

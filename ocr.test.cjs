@@ -21,6 +21,7 @@ console.log(`${cases.length} OCR parser regression tests passed`);
 vm.runInContext(source.slice(source.indexOf('function fieldRectangle('), source.indexOf('function parseDashboardText(')), context);
 for (const [text, field, expected] of [
   ['11,7 l/100km', 'consumption', 11.7],
+  ['11,7 1/100km', 'consumption', 11.7],
   ['11,8', 'consumption', 11.8],
   ['79:28 h', 'duration', '79:28'],
   ['29:07', 'duration', '29:07'],

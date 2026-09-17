@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#071015" />
+    <meta name="description" content="Fahrten per Bordcomputer-Foto erfassen und Verbrauch, Zeit und FEI vergleichen." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Fahrtwert" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icon-180.png" />
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>Fahrtwert</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#erfassen" aria-label="Fahrtwert Startseite">
+          <span class="brand-mark" aria-hidden="true">FW</span>
+          <span>FAHRTWERT</span>
+        </a>
+        <button class="privacy-pill" type="button" id="privacyButton" aria-haspopup="dialog">
+          <span class="privacy-dot" aria-hidden="true"></span><span class="privacy-label">Lokal gespeichert</span>
+        </button>
+      </header>
+
+      <main>
+        <section class="view is-active" id="view-capture" data-view="capture" aria-labelledby="captureTitle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">NEUE FAHRT</p>
+              <h1 id="captureTitle">Foto rein. Fahrwert raus.</h1>
+            </div>
+            <p class="section-note">Erkennt Strecke, Verbrauch, Fahrzeit und Ø-Tempo.</p>
+          </div>
+
+          <div class="capture-grid">
+            <div class="capture-card">
+              <input id="photoInput" class="visually-hidden" type="file" accept="image/*" capture="environment" />
+              <label class="photo-drop" id="photoDrop" for="photoInput">
+                <span class="camera-lens" aria-hidden="true"><span></span></span>
+                <strong>Bordcomputer fotografieren</strong>
+                <span>oder vorhandenes Bild auswählen</span>
+              </label>
+              <div class="photo-preview" id="photoPreview" hidden>
+                <img id="previewImage" alt="Ausgewähltes Foto des Bordcomputers" />
+                <div class="scan-line" aria-hidden="true"></div>
+                <div class="photo-actions">
+                  <label class="small-button" for="photoInput">Anderes Bild</label>
+                  <button class="small-button accent" id="scanAgainButton" type="button">Neu erkennen</button>
+                </div>
+              </div>
+              <div class="scan-status" id="scanStatus" role="status" aria-live="polite">
+                <span class="status-light" aria-hidden="true"></span>
+                <span>Bereit für dein erstes Foto</span>
+              </div>
+            </div>
+
+            <form class="trip-form" id="tripForm">
+              <div class="form-head">
+                <div>
+                  <p class="eyebrow">ERKANNTE WERTE</p>
+                  <h2>Bitte kurz prüfen</h2>
+                </div>
+                <span class="confidence" id="confidenceBadge" hidden>Erkannt</span>
+              </div>
+
+              <div class="field-row two-columns">
+                <label class="field">
+                  <span>Datum</span>
+                  <input id="tripDate" name="date" type="date" required />
+                </label>
+                <label class="field">
+                  <span>Bezeichnung</span>
+                  <input id="tripName" name="name" type="text" maxlength="40" placeholder="z. B. Heimweg" />
+                </label>
+              </div>
+
+              <div class="metric-fields">
+                <label class="field metric-field">
+                  <span>Strecke</span>
+                  <span class="input-unit"><input id="distance" name="distance" inputmode="decimal" placeholder="2204,0" required /><b>km</b></span>
+                </label>
+                <label class="field metric-field">
+                  <span>Verbrauch</span>
+                  <span class="input-unit"><input id="consumption" name="consumption" inputmode="decimal" placeholder="11,8" required /><b>l/100</b></span>
+                </label>
+                <label class="field metric-field">
+                  <span>Fahrzeit</span>
+                  <span class="input-unit"><input id="duration" name="duration" inputmode="numeric" placeholder="29:07" pattern="[0-9]{1,3}:[0-5][0-9]" required /><b>hh:mm</b></span>
+                </label>
+                <label class="field metric-field">
+                  <span>Ø-Tempo <em>optional</em></span>
+                  <span class="input-unit"><input id="averageSpeed" name="averageSpeed" inputmode="numeric" placeholder="76" /><b>km/h</b></span>
+                </label>
+              </div>
+
+              <div class="score-preview" id="scorePreview">
+                <div class="score-ring" id="scoreRing" style="--score-angle: 0deg">
+                  <span id="scoreValue">–</span>
+                  <small>FEI</small>
+                </div>
+                <div class="score-copy">
+                  <span class="score-label" id="scoreLabel">Werte eingeben</span>
+                  <p id="scoreExplanation">Je kleiner der Fahr-Effizienz-Index, desto effizienter die Fahrt.</p>
+                </div>
+              </div>
+
+              <button class="primary-button" id="saveButton" type="submit">
+                <span>Fahrt speichern</span><span aria-hidden="true">→</span>
+              </button>
+            </form>
+          </div>
+        </section>
+
+        <section class="view" id="view-compare" data-view="compare" aria-labelledby="compareTitle" hidden>
+          <div class="section-heading compare-heading">
+            <div>
+              <p class="eyebrow">DEINE FAHRTEN</p>
+              <h1 id="compareTitle">Was lohnt sich wirklich?</h1>
+            </div>
+            <div class="segmented" role="group" aria-label="Fahrten sortieren">
+              <button type="button" class="is-active" data-sort="fei">Effizienz</button>
+              <button type="button" data-sort="date">Datum</button>
+            </div>
+          </div>
+
+          <div class="summary-grid" id="summaryGrid">
+            <article class="summary-card hero-metric">
+              <span>Beste Fahrt</span>
+              <strong id="bestScore">–</strong>
+              <small>FEI · kleiner ist besser</small>
+            </article>
+            <article class="summary-card">
+              <span>Ø Verbrauch</span>
+              <strong id="averageConsumption">–</strong>
+              <small>Liter / 100 km</small>
+            </article>
+            <article class="summary-card">
+              <span>Erfasste Fahrten</span>
+              <strong id="tripCount">0</strong>
+              <small id="totalDistance">0 km gesamt</small>
+            </article>
+          </div>
+
+          <div class="comparison-layout">
+            <div class="trip-list-wrap">
+              <div class="list-head">
+                <h2>Vergleich</h2>
+                <span id="listHint">Noch keine Fahrten</span>
+              </div>
+              <div class="trip-list" id="tripList"></div>
+              <div class="empty-state" id="emptyState">
+                <div class="empty-gauge" aria-hidden="true"><span>100</span></div>
+                <h3>Dein Vergleich startet mit dem ersten Foto.</h3>
+                <p>Als Orientierung: 6 l/100 km bei 100 km/h entsprechen einem FEI von 100.</p>
+                <button class="secondary-button" type="button" data-go="capture">Erste Fahrt erfassen</button>
+              </div>
+            </div>
+
+            <aside class="formula-card">
+              <p class="eyebrow">SO WIRD VERGLICHEN</p>
+              <h2>Verbrauch und Zeit in einer Zahl.</h2>
+              <div class="formula" aria-label="FEI ist 100 mal die Wurzel aus Verbrauch geteilt durch 6 mal 100 mal Stunden geteilt durch Kilometer">
+                <span>FEI = 100 × √</span><span class="fraction"><b>Verbrauch</b><i>6</i></span><span>×</span><span class="fraction"><b>100 × Stunden</b><i>Kilometer</i></span>
+              </div>
+              <p>So kannst du auch unterschiedlich lange Fahrten fair vergleichen. Ein niedrigerer Wert bedeutet: weniger Kraftstoff und/oder weniger Zeit pro Strecke.</p>
+              <div class="scale">
+                <span><b>&lt; 90</b> sehr effizient</span>
+                <span><b>90–110</b> ausgewogen</span>
+                <span><b>&gt; 110</b> verbrauchsintensiv</span>
+              </div>
+            </aside>
+          </div>
+        </section>
+      </main>
+
+      <nav class="bottom-nav" aria-label="Hauptnavigation">
+        <button type="button" class="is-active" data-target="capture" aria-current="page">
+          <span class="nav-icon capture-icon" aria-hidden="true"></span><span>Erfassen</span>
+        </button>
+        <button type="button" data-target="compare">
+          <span class="nav-icon compare-icon" aria-hidden="true"></span><span>Vergleichen</span>
+          <b class="nav-count" id="navCount" hidden>0</b>
+        </button>
+      </nav>
+    </div>
+
+    <dialog id="privacyDialog">
+      <button class="dialog-close" type="button" aria-label="Schließen">×</button>
+      <p class="eyebrow">DEINE DATEN</p>
+      <h2>Bleiben auf diesem Gerät.</h2>
+      <p>Fotos und Fahrtdaten werden nur im Speicher deines Browsers abgelegt. Es gibt kein Konto und keinen Server-Upload.</p>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+    <script src="./app.js" defer></script>
+  </body>
+</html>

@@ -8,6 +8,7 @@ const state = {
   imageData: "",
   sort: "fei",
   scanning: false,
+  ocrImage: null,
 };
 
 const elements = {
@@ -67,6 +68,9 @@ elements.photoDrop.addEventListener("drop", (event) => {
 });
 
 elements.scanAgainButton.addEventListener("click", () => runOCR(state.imageData));
+["cropLeft", "cropTop", "cropWidth", "cropHeight"].forEach((id) => {
+  $("#" + id).addEventListener("input", drawCrop);
+});
 elements.form.addEventListener("input", updateScorePreview);
 elements.form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -95,12 +99,24 @@ privacyDialog.addEventListener("click", (event) => {
 });
 
 async function handleImage(file) {
+  if (state.scanning) return;
   if (!file.type.startsWith("image/")) {
     setScanStatus("Bitte ein Bild auswählen.", "error");
     return;
   }
   try {
-    state.imageData = await resizeImage(file, 1400, 0.78);
+    // Keep the source separately: storage thumbnails must not limit OCR quality.
+    const source = URL.createObjectURL(file);
+    try {
+      state.ocrImage = await loadImage(source);
+    } finally {
+      URL.revokeObjectURL(source);
+    }
+    state.imageData = await resizeImage(file, 1400, 0.85);
+    ["cropLeft", "cropTop"].forEach((id) => $("#" + id).value = 0);
+    ["cropWidth", "cropHeight"].forEach((id) => $("#" + id).value = 100);
+    $("#cropTools").hidden = false;
+    drawCrop();
     elements.previewImage.src = state.imageData;
     elements.photoDrop.hidden = true;
     elements.photoPreview.hidden = false;
@@ -118,18 +134,40 @@ async function runOCR(imageData) {
     return;
   }
   state.scanning = true;
+  elements.photoInput.disabled = true;
+  elements.scanAgainButton.disabled = true;
+  $("#saveButton").disabled = true;
+  $$("#cropTools input").forEach((input) => input.disabled = true);
+  elements.confidenceBadge.hidden = true;
+  [elements.distance, elements.consumption, elements.duration, elements.averageSpeed].forEach((input) => input.value = "");
+  updateScorePreview();
+  $("#ocrText").textContent = "";
+  $("#ocrDetails").hidden = false;
   elements.photoPreview.classList.add("is-scanning");
   setScanStatus("Bild wird vorbereitet …", "working");
+  let worker;
+  let pass = 1;
   try {
-    const processed = await preprocessImage(imageData);
-    const result = await window.Tesseract.recognize(processed, "deu", {
+    worker = await window.Tesseract.createWorker("deu", 1, {
       logger(message) {
         if (message.status === "recognizing text") {
-          setScanStatus(`Werte werden erkannt · ${Math.round((message.progress || 0) * 100)} %`, "working");
+          setScanStatus(`Lesedurchlauf ${pass}/3 · ${Math.round((message.progress || 0) * 100)} %`, "working");
         }
       },
     });
-    const values = parseDashboardText(result.data.text);
+    const candidates = [];
+    for (const mode of ["original", "inverted", "threshold"]) {
+      await worker.setParameters({ tessedit_pageseg_mode: "11", preserve_interword_spaces: "1" });
+      const processed = await prepareOCR(mode);
+      const result = await worker.recognize(processed);
+      const values = parseDashboardText(result.data.text);
+      const count = Object.values(values).filter((value) => value !== undefined).length;
+      candidates.push({ values, score: count * 100 + (result.data.confidence || 0) });
+      $("#ocrText").textContent += `Durchlauf ${pass} (${mode})\n${result.data.text}\n\n`;
+      pass += 1;
+    }
+    // Select a complete reading rather than mixing incompatible measurements.
+    const values = candidates.sort((a, b) => b.score - a.score)[0].values;
     const found = applyRecognizedValues(values);
     if (found) {
       elements.confidenceBadge.hidden = false;
@@ -142,19 +180,29 @@ async function runOCR(imageData) {
     console.error(error);
     setScanStatus("Erkennung fehlgeschlagen. Die Werte können manuell eingetragen werden.", "error");
   } finally {
+    if (worker) await worker.terminate().catch(console.error);
     state.scanning = false;
+    elements.photoInput.disabled = false;
+    elements.scanAgainButton.disabled = false;
+    $("#saveButton").disabled = false;
+    $$("#cropTools input").forEach((input) => input.disabled = false);
     elements.photoPreview.classList.remove("is-scanning");
   }
 }
 
 function parseDashboardText(rawText) {
-  const text = rawText.replace(/O/g, "0").replace(/,/g, ".");
+  const text = rawText.replace(/(?<=\d)[Oo](?=\d|\s|$)/g, "0")
+    .replace(/(\d)[.,](?=\d{3}[.,]\d)/g, "$1")
+    .replace(/,/g, ".").replace(/[|]/g, "l")
+    .replace(/(\d)\s*v\s*100\s*km/gi, "$1 l/100km")
+    .replace(/km\s*\/\s*r\b/gi, "km/h");
   const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-  const fuelMatch = text.match(/(\d{1,2}(?:\.\d)?)\s*(?:l|1)\s*\/?\s*100\s*k?m/i);
-  const durationMatch = text.match(/(\d{1,3})\s*[:.]\s*([0-5]\d)\s*h/i);
+  const fuelMatch = text.match(/\b(\d{1,2}(?:\s*\.\s*\d)?)\s*(?:l|1|i)\s*\/?\s*100\s*k?m/i);
+  const durationMatch = text.match(/\b(\d{1,3})\s*[:.]\s*([0-5]\d)\s*h\b/i)
+    || (text.match(/\b\d{1,3}\s*:\s*[0-5]\d\b/g)?.length === 1 ? text.match(/\b(\d{1,3})\s*:\s*([0-5]\d)\b/) : null);
   const speedMatches = [...text.matchAll(/(\d{1,3})\s*k?m\s*\/?\s*h/gi)]
     .map((match) => Number(match[1]))
-    .filter((value) => value >= 10 && value <= 250);
+    .filter((value) => value >= 1 && value <= 250);
 
   let distance;
   const pairedLine = lines.find((line) => /km\s*\/?\s*h/i.test(line) && /\d(?:[.,]\d)?\s*km/i.test(line.replace(/km\s*\/?\s*h/gi, "")));
@@ -164,18 +212,73 @@ function parseDashboardText(rawText) {
     if (match) distance = Number(match[1]);
   }
   if (!distance) {
-    const candidates = [...text.matchAll(/(\d{2,5}(?:\.\d)?)\s*k?m(?!\s*\/?\s*h)/gi)]
+    const distanceText = text.replace(/\d{1,2}(?:\s*\.\s*\d)?\s*(?:l|1|i)\s*\/?\s*100\s*k?m/gi, "");
+    const candidates = [...distanceText.matchAll(/\b(\d{1,5}(?:\.\d)?)\s*k?m\b(?!\s*\/?\s*h)/gi)]
       .map((match) => Number(match[1]))
       .filter((value) => value >= 1 && value < 10000);
-    distance = candidates.find((value) => String(value).includes(".")) || candidates[0];
+    if (durationMatch && speedMatches.length) {
+      const expected = (Number(durationMatch[1]) + Number(durationMatch[2]) / 60) * speedMatches[0];
+      const plausible = candidates.filter((value) => Math.abs(value - expected) / Math.max(expected, 1) < 0.15);
+      const decimalCandidates = plausible.filter((value) => !Number.isInteger(value));
+      if (decimalCandidates.length === 1) distance = decimalCandidates[0];
+      else if (plausible.length === 1) distance = plausible[0];
+    }
+    if (distance === undefined && candidates.length === 1) distance = candidates[0];
   }
 
   return {
-    consumption: fuelMatch ? Number(fuelMatch[1]) : undefined,
+    consumption: fuelMatch ? Number(fuelMatch[1].replace(/\s/g, "")) : undefined,
     duration: durationMatch ? `${durationMatch[1]}:${durationMatch[2]}` : undefined,
     averageSpeed: speedMatches[0],
     distance,
   };
+}
+
+function loadImage(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = source;
+  });
+}
+
+function cropBounds(image) {
+  const left = Number($("#cropLeft").value) / 100;
+  const top = Number($("#cropTop").value) / 100;
+  const width = Math.min(Number($("#cropWidth").value) / 100, 1 - left);
+  const height = Math.min(Number($("#cropHeight").value) / 100, 1 - top);
+  return [left * image.width, top * image.height, width * image.width, height * image.height];
+}
+
+function drawCrop() {
+  if (!state.ocrImage) return;
+  const canvas = $("#cropPreview");
+  const [x, y, w, h] = cropBounds(state.ocrImage);
+  canvas.width = Math.max(1, Math.round(600 * w / Math.max(w, h)));
+  canvas.height = Math.max(1, Math.round(600 * h / Math.max(w, h)));
+  canvas.getContext("2d").drawImage(state.ocrImage, x, y, w, h, 0, 0, canvas.width, canvas.height);
+}
+
+async function prepareOCR(mode) {
+  const image = state.ocrImage || await loadImage(state.imageData);
+  const [x, y, w, h] = cropBounds(image);
+  const scale = Math.min(3, 2400 / Math.max(w, h));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(w * scale));
+  canvas.height = Math.max(1, Math.round(h * scale));
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(image, x, y, w, h, 0, 0, canvas.width, canvas.height);
+  if (mode !== "original") {
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      const gray = pixels.data[i] * .299 + pixels.data[i + 1] * .587 + pixels.data[i + 2] * .114;
+      const value = mode === "threshold" ? (gray > 155 ? 0 : 255) : 255 - gray;
+      pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = value;
+    }
+    context.putImageData(pixels, 0, 0);
+  }
+  return canvas;
 }
 
 function applyRecognizedValues(values) {
@@ -320,7 +423,8 @@ function getVerdict(fei) {
 }
 
 function parseLocaleNumber(value) {
-  return Number(String(value || "").trim().replace(/\s/g, "").replace(",", "."));
+  const text = String(value || "").trim().replace(/\s/g, "");
+  return Number(text.includes(",") ? text.replace(/\./g, "").replace(",", ".") : text);
 }
 
 function parseDuration(value) {
@@ -338,7 +442,7 @@ function formatNumber(value, digits = 1) {
 }
 
 function formatInputNumber(value) {
-  return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(value);
+  return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1, useGrouping: false }).format(value);
 }
 
 function setScanStatus(message, type = "") {
@@ -355,6 +459,10 @@ function resetCapture() {
   elements.previewImage.removeAttribute("src");
   elements.confidenceBadge.hidden = true;
   state.imageData = "";
+  state.ocrImage = null;
+  $("#cropTools").hidden = true;
+  $("#ocrDetails").hidden = true;
+  $("#ocrText").textContent = "";
   setScanStatus("Bereit für dein nächstes Foto");
   updateScorePreview();
 }

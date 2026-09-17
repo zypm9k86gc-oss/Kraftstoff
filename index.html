@@ -56,6 +56,16 @@
                 <span class="status-light" aria-hidden="true"></span>
                 <span>Bereit für dein erstes Foto</span>
               </div>
+              <details id="cropTools" hidden>
+                <summary>Erkennungsbereich eingrenzen</summary>
+                <p>Nur die vier Fahrwerte auswählen. Regler verschieben, dann „Neu erkennen“ drücken.</p>
+                <label>Links <input id="cropLeft" type="range" min="0" max="90" value="0" /></label>
+                <label>Oben <input id="cropTop" type="range" min="0" max="90" value="0" /></label>
+                <label>Breite <input id="cropWidth" type="range" min="10" max="100" value="100" /></label>
+                <label>Höhe <input id="cropHeight" type="range" min="10" max="100" value="100" /></label>
+                <canvas id="cropPreview" style="width:100%;height:auto" aria-label="Vorschau des Erkennungsbereichs"></canvas>
+              </details>
+              <details id="ocrDetails" hidden><summary>Erkannten Text anzeigen</summary><pre id="ocrText" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></details>
             </div>
 
             <form class="trip-form" id="tripForm">

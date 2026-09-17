@@ -113,6 +113,10 @@ async function handleImage(file) {
       URL.revokeObjectURL(source);
     }
     state.imageData = await resizeImage(file, 1400, 0.85);
+    [elements.distance, elements.consumption, elements.duration, elements.averageSpeed].forEach((input) => input.value = "");
+    elements.confidenceBadge.hidden = true;
+    $("#ocrDetails").hidden = true;
+    updateScorePreview();
     ["cropLeft", "cropTop"].forEach((id) => $("#" + id).value = 0);
     ["cropWidth", "cropHeight"].forEach((id) => $("#" + id).value = 100);
     $("#cropTools").hidden = false;
@@ -120,7 +124,8 @@ async function handleImage(file) {
     elements.previewImage.src = state.imageData;
     elements.photoDrop.hidden = true;
     elements.photoPreview.hidden = false;
-    await runOCR(state.imageData);
+    $("#cropTools").open = true;
+    setScanStatus("Ausschnitt auf die vier Werte unter dem Strich einstellen, dann Werte erkennen.");
   } catch (error) {
     console.error(error);
     setScanStatus("Das Bild konnte nicht gelesen werden.", "error");
@@ -151,23 +156,36 @@ async function runOCR(imageData) {
     worker = await window.Tesseract.createWorker("deu", 1, {
       logger(message) {
         if (message.status === "recognizing text") {
-          setScanStatus(`Lesedurchlauf ${pass}/3 · ${Math.round((message.progress || 0) * 100)} %`, "working");
+          setScanStatus(`Feld ${pass}/4 · ${Math.round((message.progress || 0) * 100)} %`, "working");
         }
       },
     });
-    const candidates = [];
-    for (const mode of ["original", "inverted", "threshold"]) {
-      await worker.setParameters({ tessedit_pageseg_mode: "11", preserve_interword_spaces: "1" });
+    const values = {};
+    const fields = ["consumption", "duration", "averageSpeed", "distance"];
+    const labels = ["Oben links: Verbrauch", "Oben rechts: Fahrzeit", "Unten links: Ø-Tempo", "Unten rechts: Strecke"];
+    const readings = fields.map(() => []);
+    for (const mode of ["inverted", "original"]) {
       const processed = await prepareOCR(mode);
-      const result = await worker.recognize(processed);
-      const values = parseDashboardText(result.data.text);
-      const count = Object.values(values).filter((value) => value !== undefined).length;
-      candidates.push({ values, score: count * 100 + (result.data.confidence || 0) });
-      $("#ocrText").textContent += `Durchlauf ${pass} (${mode})\n${result.data.text}\n\n`;
-      pass += 1;
+      for (let index = 0; index < fields.length; index++) {
+        pass = index + 1;
+        const region = fieldRectangle(processed.width, processed.height, index);
+        const canvas = document.createElement("canvas");
+        canvas.width = region.width + 40;
+        canvas.height = region.height + 40;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = mode === "inverted" ? "white" : "black";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(processed, region.left, region.top, region.width, region.height, 20, 20, region.width, region.height);
+        await worker.setParameters({ tessedit_pageseg_mode: "7", preserve_interword_spaces: "1" });
+        const result = await worker.recognize(canvas);
+        const value = parseFieldText(result.data.text, fields[index]);
+        if (value !== undefined) readings[index].push({ value, confidence: result.data.confidence || 0 });
+        $("#ocrText").textContent += `${labels[index]} (${mode})\n${result.data.text}\n`;
+      }
     }
-    // Select a complete reading rather than mixing incompatible measurements.
-    const values = candidates.sort((a, b) => b.score - a.score)[0].values;
+    fields.forEach((field, index) => {
+      values[field] = readings[index].sort((a, b) => b.confidence - a.confidence)[0]?.value;
+    });
     const found = applyRecognizedValues(values);
     if (found) {
       elements.confidenceBadge.hidden = false;
@@ -188,6 +206,32 @@ async function runOCR(imageData) {
     $$("#cropTools input").forEach((input) => input.disabled = false);
     elements.photoPreview.classList.remove("is-scanning");
   }
+}
+
+function fieldRectangle(width, height, index) {
+  const splitX = Math.round(width * 0.6);
+  const splitY = Math.round(height * 0.5);
+  const right = index % 2 === 1;
+  const bottom = index >= 2;
+  return { left: right ? splitX : 0, top: bottom ? splitY : 0,
+    width: right ? width - splitX : splitX, height: bottom ? height - splitY : splitY };
+}
+
+function parseFieldText(raw, field) {
+  const text = raw.replace(/(\d)[.,](?=\d{3}[.,]\d)/g, "$1")
+    .replace(/,/g, ".").replace(/(?<=\d)[Oo](?=\d|\b)/g, "0")
+    .replace(/\s*\.\s*/g, ".");
+  if (field === "duration") {
+    const match = text.match(/\b(\d{1,3})\s*[:.]\s*([0-5]\d)\b/);
+    return match ? `${Number(match[1])}:${match[2]}` : undefined;
+  }
+  // Units are optional: position, not the presence of km or l, determines the field.
+  const withoutUnits = text.replace(/(?:l|i|\||v)\s*\/?\s*100\s*k?m/gi, "");
+  const matches = withoutUnits.match(/\d+(?:\.\d+)?/g) || [];
+  if (matches.length !== 1) return undefined;
+  const value = Number(matches[0]);
+  const max = field === "consumption" ? 60 : field === "averageSpeed" ? 350 : 999999;
+  return value > 0 && value <= max ? value : undefined;
 }
 
 function parseDashboardText(rawText) {
@@ -258,6 +302,15 @@ function drawCrop() {
   canvas.width = Math.max(1, Math.round(600 * w / Math.max(w, h)));
   canvas.height = Math.max(1, Math.round(600 * h / Math.max(w, h)));
   canvas.getContext("2d").drawImage(state.ocrImage, x, y, w, h, 0, 0, canvas.width, canvas.height);
+  const ctx = canvas.getContext("2d");
+  ctx.strokeStyle = "#42e8cf";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(canvas.width * .6, 0);
+  ctx.lineTo(canvas.width * .6, canvas.height);
+  ctx.moveTo(0, canvas.height * .5);
+  ctx.lineTo(canvas.width, canvas.height * .5);
+  ctx.stroke();
 }
 
 async function prepareOCR(mode) {

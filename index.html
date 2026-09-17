@@ -49,7 +49,7 @@
                 <div class="scan-line" aria-hidden="true"></div>
                 <div class="photo-actions">
                   <label class="small-button" for="photoInput">Anderes Bild</label>
-                  <button class="small-button accent" id="scanAgainButton" type="button">Neu erkennen</button>
+                  <button class="small-button accent" id="scanAgainButton" type="button">Werte erkennen</button>
                 </div>
               </div>
               <div class="scan-status" id="scanStatus" role="status" aria-live="polite">
@@ -57,8 +57,9 @@
                 <span>Bereit für dein erstes Foto</span>
               </div>
               <details id="cropTools" hidden>
-                <summary>Erkennungsbereich eingrenzen</summary>
-                <p>Nur die vier Fahrwerte auswählen. Regler verschieben, dann „Neu erkennen“ drücken.</p>
+                <summary>Vier Werte unter dem Strich auswählen</summary>
+                <p>Ausschnitt eng um die beiden Wertezeilen setzen. Das Kreuz muss zwischen den Werten liegen. Dann „Werte erkennen“ drücken.</p>
+                <table><tr><td>Oben links: Verbrauch</td><td>Oben rechts: Fahrzeit</td></tr><tr><td>Unten links: Ø-Tempo</td><td>Unten rechts: Strecke</td></tr></table>
                 <label>Links <input id="cropLeft" type="range" min="0" max="90" value="0" /></label>
                 <label>Oben <input id="cropTop" type="range" min="0" max="90" value="0" /></label>
                 <label>Breite <input id="cropWidth" type="range" min="10" max="100" value="100" /></label>

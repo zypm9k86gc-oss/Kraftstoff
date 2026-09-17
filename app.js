@@ -9,6 +9,7 @@ const state = {
   sort: "fei",
   scanning: false,
   ocrImage: null,
+  editingId: null,
 };
 
 const elements = {
@@ -72,20 +73,36 @@ elements.scanAgainButton.addEventListener("click", () => runOCR(state.imageData)
   $("#" + id).addEventListener("input", drawCrop);
 });
 elements.form.addEventListener("input", updateScorePreview);
-elements.form.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const trip = tripFromForm();
-  if (!trip) return;
-  addTrip(trip);
+$("#accEnabled").addEventListener("change", syncACC);
+$("#cancelEditButton").addEventListener("click", () => {
+  if (state.scanning) return;
   resetCapture();
   switchView("compare");
-  showToast("Fahrt gespeichert");
+});
+elements.form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (state.scanning) return;
+  const trip = tripFromForm();
+  if (!trip) return;
+  const editing = Boolean(state.editingId);
+  if (editing) {
+    state.trips = state.trips.map((item) => item.id === state.editingId ? trip : item);
+    persistTrips();
+    renderAll();
+  } else addTrip(trip);
+  resetCapture();
+  switchView("compare");
+  showToast(editing ? "Änderungen gespeichert" : "Fahrt gespeichert");
 });
 
 $("#tripList").addEventListener("click", (event) => {
+  if (state.scanning) return;
+  const edit = event.target.closest("[data-edit]");
+  if (edit) { editTrip(edit.dataset.edit); return; }
   const button = event.target.closest("[data-delete]");
   if (!button) return;
   state.trips = state.trips.filter((trip) => trip.id !== button.dataset.delete);
+  if (state.editingId === button.dataset.delete) resetCapture();
   persistTrips();
   renderAll();
   showToast("Fahrt gelöscht");
@@ -124,6 +141,7 @@ async function handleImage(file) {
     elements.previewImage.src = state.imageData;
     elements.photoDrop.hidden = true;
     elements.photoPreview.hidden = false;
+    elements.scanAgainButton.hidden = false;
     $("#cropTools").open = true;
     setScanStatus("Ausschnitt auf die vier Werte unter dem Strich einstellen, dann Werte erkennen.");
   } catch (error) {
@@ -353,6 +371,13 @@ function applyRecognizedValues(values) {
 }
 
 function tripFromForm() {
+  const existing = state.trips.find((trip) => trip.id === state.editingId);
+  const accEnabled = $("#accEnabled").checked;
+  const accSpeed = Number($("#accSpeed").value);
+  if (accEnabled && (!Number.isInteger(accSpeed) || accSpeed < 1 || accSpeed > 350)) {
+    showToast("Bitte eine ACC-Geschwindigkeit von 1 bis 350 km/h eingeben");
+    return null;
+  }
   const distance = parseLocaleNumber(elements.distance.value);
   const consumption = parseLocaleNumber(elements.consumption.value);
   const durationMinutes = parseDuration(elements.duration.value);
@@ -362,7 +387,11 @@ function tripFromForm() {
     return null;
   }
   return {
-    id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+    ...existing,
+    id: existing?.id || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`),
+    accEnabled,
+    accSpeed: accEnabled ? accSpeed : null,
+    traffic: $("#traffic").value,
     date: elements.date.value,
     name: elements.name.value.trim() || "Fahrt",
     distance,
@@ -370,9 +399,46 @@ function tripFromForm() {
     durationMinutes,
     averageSpeed: averageSpeed > 0 ? averageSpeed : Math.round(distance / (durationMinutes / 60)),
     image: state.imageData,
-    createdAt: Date.now(),
+    createdAt: existing?.createdAt ?? Date.now(),
     fei: calculateFEI(consumption, distance, durationMinutes),
   };
+}
+
+function syncACC() {
+  const enabled = $("#accEnabled").checked;
+  $("#accSpeedField").hidden = !enabled;
+  $("#accSpeed").disabled = !enabled;
+  $("#accSpeed").required = enabled;
+}
+
+function editTrip(id) {
+  const trip = state.trips.find((item) => item.id === id);
+  if (!trip) return;
+  resetCapture();
+  state.editingId = id;
+  elements.date.value = trip.date;
+  elements.name.value = trip.name;
+  elements.distance.value = formatInputNumber(trip.distance);
+  elements.consumption.value = formatInputNumber(trip.consumption);
+  elements.duration.value = formatDuration(trip.durationMinutes).replace(/ h$/, "");
+  elements.averageSpeed.value = formatInputNumber(trip.averageSpeed);
+  $("#accEnabled").checked = Boolean(trip.accEnabled);
+  $("#accSpeed").value = trip.accSpeed ?? "";
+  $("#traffic").value = ["0", "+", "++"].includes(trip.traffic) ? trip.traffic : "";
+  syncACC();
+  state.imageData = trip.image || "";
+  if (state.imageData) {
+    elements.previewImage.src = state.imageData;
+    elements.photoPreview.hidden = false;
+    elements.photoDrop.hidden = true;
+  }
+  // Existing values should only change by explicit manual edits or a new photo.
+  elements.scanAgainButton.hidden = true;
+  $("#saveButton span").textContent = "Änderungen speichern";
+  $("#cancelEditButton").hidden = false;
+  setScanStatus("Gespeicherte Fahrt bearbeiten");
+  updateScorePreview();
+  switchView("capture");
 }
 
 function addTrip(trip) {
@@ -422,9 +488,11 @@ function renderTrips() {
       <div class="trip-main">
         <strong>${escapeHTML(trip.name)}</strong>
         <span>${formatNumber(trip.distance, 1)} km · ${formatNumber(trip.consumption, 1)} l/100 · ${formatDuration(trip.durationMinutes)} · Ø ${formatNumber(trip.averageSpeed, 0)} km/h · ${date}</span>
+        <span>${trip.accEnabled ? `ACC ${formatNumber(trip.accSpeed, 0)} km/h` : "ACC –"} · Verkehr ${escapeHTML(trip.traffic || "–")}</span>
       </div>
       <div class="trip-score"><strong>${formatNumber(trip.fei, 1)}</strong><small>FEI</small></div>
-      <button class="trip-delete" type="button" data-delete="${trip.id}" aria-label="${escapeHTML(trip.name)} löschen">Löschen</button>`;
+      <div class="trip-actions"><button class="small-button" type="button" data-edit="${escapeHTML(trip.id)}" aria-label="${escapeHTML(trip.name)} bearbeiten">Bearbeiten</button>
+      <button class="trip-delete" type="button" data-delete="${escapeHTML(trip.id)}" aria-label="${escapeHTML(trip.name)} löschen">Löschen</button></div>`;
     if (trip.image) {
       const thumbnail = document.createElement("img");
       thumbnail.src = trip.image;
@@ -504,7 +572,12 @@ function setScanStatus(message, type = "") {
 }
 
 function resetCapture() {
+  state.editingId = null;
   elements.form.reset();
+  syncACC();
+  elements.scanAgainButton.hidden = false;
+  $("#saveButton span").textContent = "Fahrt speichern";
+  $("#cancelEditButton").hidden = true;
   elements.date.value = new Date().toISOString().slice(0, 10);
   elements.photoInput.value = "";
   elements.photoDrop.hidden = false;

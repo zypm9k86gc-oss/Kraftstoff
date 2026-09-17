@@ -39,11 +39,26 @@
           <div class="capture-grid">
             <div class="capture-card">
               <input id="photoInput" class="visually-hidden" type="file" accept="image/*" capture="environment" />
-              <label class="photo-drop" id="photoDrop" for="photoInput">
+              <button class="photo-drop" id="photoDrop" type="button">
                 <span class="camera-lens" aria-hidden="true"><span></span></span>
                 <strong>Bordcomputer fotografieren</strong>
-                <span>oder vorhandenes Bild auswählen</span>
-              </label>
+                <span>Kamera mit Ausrichtungsraster öffnen</span>
+              </button>
+              <label class="small-button" for="photoInput">Foto aus Kamera oder Mediathek auswählen</label>
+              <dialog id="cameraDialog" aria-labelledby="cameraTitle">
+                <h2 id="cameraTitle">Vier Werte ausrichten</h2>
+                <p>Die Werte unter dem Strich in die passenden Felder halten.</p>
+                <div class="camera-stage">
+                  <video id="cameraVideo" autoplay muted playsinline></video>
+                  <div id="cameraGrid" class="camera-grid" aria-hidden="true">
+                    <span>Verbrauch · l/100 km</span><span>Fahrzeit · hh:mm</span>
+                    <span>Ø-Tempo · km/h</span><span>Strecke · km</span>
+                  </div>
+                </div>
+                <p id="cameraStatus" role="status">Kamera wird geöffnet …</p>
+                <div class="camera-actions"><button id="cameraCapture" class="primary-button" type="button" disabled>Aufnehmen und erkennen</button>
+                <button id="cameraClose" class="small-button" type="button">Schließen</button></div>
+              </dialog>
               <div class="photo-preview" id="photoPreview" hidden>
                 <img id="previewImage" alt="Ausgewähltes Foto des Bordcomputers" />
                 <div class="scan-line" aria-hidden="true"></div>

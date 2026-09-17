@@ -50,6 +50,92 @@ $$('[data-sort]').forEach((button) => button.addEventListener("click", () => {
   renderTrips();
 }));
 
+let cameraStream = null;
+let cameraRequest = 0;
+const cameraDialog = $("#cameraDialog");
+const cameraVideo = $("#cameraVideo");
+elements.photoDrop.addEventListener("click", openCamera);
+$("#cameraClose").addEventListener("click", () => cameraDialog.close());
+cameraDialog.addEventListener("close", stopCamera);
+cameraVideo.addEventListener("loadeddata", () => {
+  if (!cameraDialog.open || !cameraVideo.videoWidth) return;
+  $("#cameraCapture").disabled = false;
+  $("#cameraStatus").textContent = "Vier Werte im Raster ausrichten und aufnehmen.";
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && cameraDialog.open) cameraDialog.close();
+});
+window.addEventListener("pagehide", stopCamera);
+$("#cameraCapture").addEventListener("click", captureCamera);
+
+async function openCamera() {
+  if (state.scanning || cameraDialog.open) return;
+  const request = ++cameraRequest;
+  $("#cameraCapture").disabled = true;
+  $("#cameraStatus").textContent = "Kamerazugriff bitte erlauben …";
+  cameraDialog.showModal();
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable");
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false,
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+    if (request !== cameraRequest || !cameraDialog.open) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
+    cameraStream = stream;
+    cameraVideo.srcObject = stream;
+    await cameraVideo.play();
+  } catch (error) {
+    if (request !== cameraRequest) return;
+    stopCamera();
+    $("#cameraStatus").textContent = "Kamera nicht verfügbar. Bitte den Kamerazugriff erlauben oder nach dem Schließen ein Foto auswählen.";
+  }
+}
+
+function stopCamera() {
+  cameraRequest++;
+  cameraStream?.getTracks().forEach(track => track.stop());
+  cameraStream = null;
+  cameraVideo.srcObject = null;
+  $("#cameraCapture").disabled = true;
+}
+
+// Map the visible overlay through object-fit: cover into source video pixels.
+function cameraSourceRect(sourceWidth, sourceHeight, viewWidth, viewHeight, grid) {
+  const scale = Math.max(viewWidth / sourceWidth, viewHeight / sourceHeight);
+  const offsetX = (sourceWidth * scale - viewWidth) / 2;
+  const offsetY = (sourceHeight * scale - viewHeight) / 2;
+  return { x: (grid.x + offsetX) / scale, y: (grid.y + offsetY) / scale,
+    width: grid.width / scale, height: grid.height / scale };
+}
+
+async function captureCamera() {
+  if (!cameraStream || !cameraVideo.videoWidth || cameraVideo.readyState < 2) return;
+  $("#cameraCapture").disabled = true;
+  try {
+    const view = cameraVideo.getBoundingClientRect();
+    const grid = $("#cameraGrid").getBoundingClientRect();
+    const rect = cameraSourceRect(cameraVideo.videoWidth, cameraVideo.videoHeight, view.width, view.height,
+      { x: grid.left - view.left, y: grid.top - view.top, width: grid.width, height: grid.height });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(rect.width));
+    canvas.height = Math.max(1, Math.round(rect.height));
+    canvas.getContext("2d").drawImage(cameraVideo, rect.x, rect.y, rect.width, rect.height, 0, 0, canvas.width, canvas.height);
+    cameraDialog.close();
+    stopCamera();
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("Capture failed");
+    const loaded = await handleImage(new File([blob], "bordcomputer.png", { type: "image/png" }));
+    if (!loaded) return;
+    $("#cropTools").open = false;
+    await runOCR(state.imageData);
+  } catch (error) {
+    cameraDialog.close();
+    stopCamera();
+    setScanStatus("Aufnahme fehlgeschlagen. Bitte erneut versuchen oder ein Foto auswählen.", "error");
+  }
+}
+
 elements.photoInput.addEventListener("change", (event) => {
   const file = event.target.files?.[0];
   if (file) handleImage(file);
@@ -144,6 +230,7 @@ async function handleImage(file) {
     elements.scanAgainButton.hidden = false;
     $("#cropTools").open = true;
     setScanStatus("Ausschnitt auf die vier Werte unter dem Strich einstellen, dann Werte erkennen.");
+    return true;
   } catch (error) {
     console.error(error);
     setScanStatus("Das Bild konnte nicht gelesen werden.", "error");

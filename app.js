@@ -280,7 +280,7 @@ async function runOCR(imageData) {
   let worker;
   let pass = 1;
   try {
-    worker = await window.Tesseract.createWorker("deu", 1, {
+    worker = await window.Tesseract.createWorker("eng", 1, {
       logger(message) {
         if (message.status === "recognizing text") {
           setScanStatus(`Feld ${pass}/4 · ${Math.round((message.progress || 0) * 100)} %`, "working");
@@ -291,16 +291,26 @@ async function runOCR(imageData) {
     const fields = ["consumption", "duration", "averageSpeed", "distance"];
     const labels = ["Oben links: Verbrauch", "Oben rechts: Fahrzeit", "Unten links: Ø-Tempo", "Unten rechts: Strecke"];
     const readings = fields.map(() => []);
-    for (const mode of ["inverted", "original"]) {
+    setScanStatus("Wertebereich und Textzeilen werden gesucht …", "working");
+    const overview = await prepareOCR("original");
+    await worker.setParameters({ tessedit_pageseg_mode: "11" });
+    const located = await worker.recognize(overview);
+    const layout = findDashboardFields(located.data.words || [], overview.width, overview.height);
+    if (layout) layout.forEach((region,index) => {
+      const value = parseFieldText(region.text || "", fields[index]);
+      if (value !== undefined) readings[index].push({value,confidence:region.confidence || 0});
+    });
+    $("#ocrText").textContent = layout ? "Vier Textfelder automatisch gefunden.\n" : "Raster verwendet; bei fehlenden Werten bitte den Ausschnitt prüfen.\n";
+    for (const mode of ["original", "inverted", "contrast"]) {
       const processed = await prepareOCR(mode);
       for (let index = 0; index < fields.length; index++) {
         pass = index + 1;
-        const region = fieldRectangle(processed.width, processed.height, index);
+        const region = layout?.[index] || fieldRectangle(processed.width, processed.height, index);
         const canvas = document.createElement("canvas");
         canvas.width = region.width + 40;
         canvas.height = region.height + 40;
         const ctx = canvas.getContext("2d");
-        ctx.fillStyle = mode === "inverted" ? "white" : "black";
+        ctx.fillStyle = mode !== "original" ? "white" : "black";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(processed, region.left, region.top, region.width, region.height, 20, 20, region.width, region.height);
         await worker.setParameters({ tessedit_pageseg_mode: "7", preserve_interword_spaces: "1" });
@@ -311,13 +321,20 @@ async function runOCR(imageData) {
       }
     }
     fields.forEach((field, index) => {
-      values[field] = readings[index].sort((a, b) => b.confidence - a.confidence)[0]?.value;
+      values[field] = chooseReading(readings[index]);
     });
+    // Reject impossible distance candidates; never manufacture a value from speed/time.
+    if (values.duration && values.averageSpeed) {
+      const [hours,minutes] = values.duration.split(":").map(Number);
+      const expected = (hours+minutes/60)*values.averageSpeed;
+      const plausible = readings[3].filter(r => Math.abs(r.value-expected)/Math.max(expected,1)<.2);
+      if (plausible.length) values.distance = chooseReading(plausible);
+    }
     const found = applyRecognizedValues(values);
     if (found) {
       elements.confidenceBadge.hidden = false;
       elements.confidenceBadge.textContent = `${found} Wert${found === 1 ? "" : "e"} erkannt`;
-      setScanStatus(`${found} Wert${found === 1 ? "" : "e"} erkannt · bitte prüfen`, "done");
+      setScanStatus(`${found}/4 Werte erkannt · ${found < 4 ? "leere Felder sind unklar, bitte manuell ergänzen" : "bitte prüfen"}`, "done");
     } else {
       setScanStatus("Keine sicheren Werte erkannt. Bitte manuell eintragen.", "error");
     }
@@ -335,6 +352,49 @@ async function runOCR(imageData) {
   }
 }
 
+function chooseReading(readings) {
+  const groups = new Map();
+  readings.forEach(({value, confidence}) => {
+    const group = groups.get(value) || { value, count: 0, confidence: 0 };
+    group.count++;
+    group.confidence = Math.max(group.confidence, confidence);
+    groups.set(value, group);
+  });
+  const ranked = [...groups.values()].sort((a,b) => b.count - a.count || b.confidence - a.confidence);
+  if (!ranked.length) return undefined;
+  if (ranked.length > 1) return undefined;
+  return ranked[0].value;
+}
+
+function findDashboardFields(words, width, height) {
+  const cy = w => (w.bbox.y0 + w.bbox.y1) / 2;
+  const numbers = words.filter(w => /\d[.,]\d|\d{2,}/.test(w.text));
+  const anchors = words.filter(w => /^\d{1,3}\s*:\s*[0-5]\d\s*[hn]$/i.test(w.text));
+  const layouts = [];
+  for (const time of anchors) {
+    const a = time.bbox, h = a.y1-a.y0;
+    if (h < 3) continue;
+    const left = numbers.filter(w => w.bbox.x1 < a.x0-h*.5 && w.bbox.x0 > a.x0-h*12);
+    const fuel = left.filter(w => /\d[.,]\d/.test(w.text) && Math.abs(cy(w)-cy(time)) < h*1.3 && cy(w) < cy(time)+h*.5)
+      .sort((u,v) => Math.abs(cy(u)-cy(time))-Math.abs(cy(v)-cy(time)))[0];
+    if (!fuel) continue;
+    const speed = left.filter(w => cy(w)>cy(fuel)+h*.8 && cy(w)<cy(time)+h*3.5)
+      .sort((u,v) => cy(u)-cy(v))[0];
+    let distance = numbers.filter(w => w!==time && w.bbox.x0>a.x0-h*3 && w.bbox.x0<a.x1+h
+      && cy(w)>cy(time)+h*.7 && cy(w)<cy(time)+h*3.5)
+      .sort((u,v) => cy(u)-cy(v))[0];
+    if (!speed) continue;
+    if (!distance) distance = {bbox:{x0:a.x0-h*1.3,x1:a.x1+h,y0:speed.bbox.y0-h*.2,y1:speed.bbox.y1+h*.2}};
+    const fuelBox = {...fuel, bbox:{...fuel.bbox,x1:Math.min(a.x0-h*.6, fuel.bbox.x1+h*3)}};
+    layouts.push([fuelBox,time,speed,distance].map(word => {
+      const box=word.bbox, pad=h*.18;
+      const left=Math.max(0,Math.floor(box.x0-pad)), top=Math.max(0,Math.floor(box.y0-pad));
+      return {left,top,width:Math.min(width-left,Math.ceil(box.x1+pad-left)),height:Math.min(height-top,Math.ceil(box.y1+pad-top)),text:word.text || "",confidence:word.confidence || 0};
+    }));
+  }
+  return layouts.length === 1 ? layouts[0] : null;
+}
+
 function fieldRectangle(width, height, index) {
   const splitX = Math.round(width * 0.6);
   const splitY = Math.round(height * 0.5);
@@ -345,15 +405,18 @@ function fieldRectangle(width, height, index) {
 }
 
 function parseFieldText(raw, field) {
-  const text = raw.replace(/(\d)[.,](?=\d{3}[.,]\d)/g, "$1")
+  if (/^[<>]/.test(raw.trim())) return undefined;
+  const text = raw.replace(/^[\søØ@©®oO2]+\s+(?=\d)/, "")
+    .replace(/(\d)[.,](?=\d{3}[.,]\d)/g, "$1")
     .replace(/,/g, ".").replace(/(?<=\d)[Oo](?=\d|\b)/g, "0")
     .replace(/\s*\.\s*/g, ".");
   if (field === "duration") {
-    const match = text.match(/\b(\d{1,3})\s*[:.]\s*([0-5]\d)\b/);
+    const match = text.match(/\b(\d{1,3})\s*[:.]\s*([0-5]\d)(?!\d)/);
     return match ? `${Number(match[1])}:${match[2]}` : undefined;
   }
   // Units are optional: position, not the presence of km or l, determines the field.
-    const withoutUnits = text.replace(/(?:l|i|1|\||v)\s*\/?\s*100\s*k?m/gi, "");
+  const withoutUnits = text.replace(/(?:l|i|1|\||v|\\)\s*\/?\s*100\s*k?m/gi, "")
+    .replace(/(?:\s+\/?|\/)100\s*k?m\b/gi, "");
   const matches = withoutUnits.match(/\d+(?:\.\d+)?/g) || [];
   if (matches.length !== 1) return undefined;
   const value = Number(matches[0]);
@@ -443,7 +506,7 @@ function drawCrop() {
 async function prepareOCR(mode) {
   const image = state.ocrImage || await loadImage(state.imageData);
   const [x, y, w, h] = cropBounds(image);
-  const scale = Math.min(3, 2400 / Math.max(w, h));
+  const scale = Math.min(3, 3200 / Math.max(w, h));
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(w * scale));
   canvas.height = Math.max(1, Math.round(h * scale));
@@ -451,9 +514,20 @@ async function prepareOCR(mode) {
   context.drawImage(image, x, y, w, h, 0, 0, canvas.width, canvas.height);
   if (mode !== "original") {
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    const histogram = new Uint32Array(256);
+    if (mode === "contrast") {
+      for (let i=0;i<pixels.data.length;i+=4) histogram[Math.round(pixels.data[i]*.299+pixels.data[i+1]*.587+pixels.data[i+2]*.114)]++;
+    }
+    let low=0, high=255, count=0;
+    if (mode === "contrast") {
+      const cutoff=canvas.width*canvas.height*.02;
+      while(low<254 && count+histogram[low]<cutoff) count+=histogram[low++];
+      count=0;
+      while(high>low+1 && count+histogram[high]<cutoff) count+=histogram[high--];
+    }
     for (let i = 0; i < pixels.data.length; i += 4) {
       const gray = pixels.data[i] * .299 + pixels.data[i + 1] * .587 + pixels.data[i + 2] * .114;
-      const value = mode === "threshold" ? (gray > 155 ? 0 : 255) : 255 - gray;
+      const value = mode === "contrast" ? 255-Math.max(0,Math.min(255,(gray-low)*255/(high-low))) : mode === "threshold" ? (gray > 155 ? 0 : 255) : 255 - gray;
       pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = value;
     }
     context.putImageData(pixels, 0, 0);

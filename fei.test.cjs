@@ -1,0 +1,17 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const src=fs.readFileSync(__dirname+'/app.js','utf8');
+const saved=[{id:'old',consumption:9.3,distance:100,durationMinutes:60,fei:124.5,accSpeed:120,traffic:'+',image:'photo'}];
+const ctx=vm.createContext({localStorage:{getItem:()=>JSON.stringify(saved)}});
+vm.runInContext(src.match(/const STORAGE_KEY = .*;/)[0]+src.match(/const FEI_REFERENCE_CONSUMPTION = .*;/)[0]+src.slice(src.indexOf('function calculateFEI('),src.indexOf('function parseLocaleNumber('))+src.slice(src.indexOf('function loadTrips('),src.indexOf('function persistTrips(')),ctx);
+assert.equal(ctx.calculateFEI(9.3,100,60),100);
+assert.equal(ctx.calculateFEI(9.3,200,120),100);
+assert.ok(ctx.calculateFEI(6.8,116.1,71)<90);
+assert.ok(ctx.calculateFEI(9.6,903.4,465)<100);
+assert.ok(ctx.calculateFEI(11.7,5408.8,4768)>110);
+assert.ok(Number.isNaN(ctx.calculateFEI(9.3,0,60)));
+assert.equal(ctx.getVerdict(100).label,'Effizient für den RS 3');
+assert.equal(ctx.getVerdict(100.01).label,'Ausgewogen');
+assert.equal(ctx.getVerdict(89.9).label,'Sehr effizient');
+const migrated=ctx.loadTrips()[0];assert.equal(migrated.fei,100);
+for(const key of ['id','image','traffic','accSpeed','consumption','distance','durationMinutes'])assert.equal(migrated[key],saved[0][key]);
+console.log('RS3 reference, category boundaries, example trips and legacy recalculation passed');

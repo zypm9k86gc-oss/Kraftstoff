@@ -15,9 +15,9 @@ Die OCR-Bibliothek wird beim ersten Einsatz aus dem Internet geladen. Die Fahrtd
 
 ## FEI
 
-`FEI = 100 × sqrt((Verbrauch / 6) × (100 × Stunden / Kilometer))`
+`FEI = 100 × sqrt((Verbrauch / 9.3) × (100 × Stunden / Kilometer))`
 
-Ein FEI von 100 entspricht der Referenz von 6 l/100 km bei 100 km/h Durchschnittsgeschwindigkeit. Je kleiner der FEI, desto effizienter die Kombination aus Verbrauch und Zeit.
+Ein FEI von 100 entspricht der gewählten App-Referenz von 9,3 l/100 km bei 100 km/h Durchschnittsgeschwindigkeit für den Audi RS 3 8Y (2023). Dies ist kein offizieller Audi-Index oder zertifizierter Verbrauch bei 100 km/h. Je kleiner der FEI, desto effizienter die Kombination aus Verbrauch und Zeit. Unter 90 gilt als sehr effizient, 90–100 als effizient für den RS 3, über 100 bis 110 als ausgewogen, über 110 als verbrauchsintensiv. Bestehende Fahrten werden beim Laden neu berechnet; Messwerte bleiben erhalten. ACC und Verkehr beeinflussen die Formel nicht.
 
 ## Lokal testen
 

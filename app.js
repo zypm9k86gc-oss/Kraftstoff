@@ -1,4 +1,6 @@
 const STORAGE_KEY = "fahrtwert.trips.v1";
+// App reference for RS 3 8Y (2023); not a certified consumption at 100 km/h.
+const FEI_REFERENCE_CONSUMPTION = 9.3;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -717,10 +719,11 @@ function switchView(target) {
 
 function calculateFEI(consumption, distance, durationMinutes) {
   if (!(consumption > 0) || !(distance > 0) || !(durationMinutes > 0)) return NaN;
-  return 100 * Math.sqrt((consumption / 6) * (100 * (durationMinutes / 60) / distance));
+  return 100 * Math.sqrt((consumption / FEI_REFERENCE_CONSUMPTION) * (100 * (durationMinutes / 60) / distance));
 }
 
 function getVerdict(fei) {
+  if (fei >= 90 && fei <= 100) return { label: "Effizient für den RS 3", copy: "Verbrauch und Zeit liegen im gewählten RS-3-Referenzbereich.", color: "var(--green)" };
   if (fei < 90) return { label: "Sehr effizient", copy: "Starkes Verhältnis aus Verbrauch und Zeit.", color: "var(--green)" };
   if (fei <= 110) return { label: "Ausgewogen", copy: "Nah am Referenzwert von 100.", color: "var(--cyan)" };
   return { label: "Verbrauchsintensiv", copy: "Hier lohnt sich ein Vergleich mit ruhigeren Fahrten.", color: "var(--amber)" };
@@ -779,7 +782,7 @@ function resetCapture() {
 function loadTrips() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map(trip => ({...trip, fei: calculateFEI(trip.consumption, trip.distance, trip.durationMinutes)})) : [];
   } catch {
     return [];
   }

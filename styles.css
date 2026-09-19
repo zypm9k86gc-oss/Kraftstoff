@@ -31,6 +31,28 @@ button, input { font: inherit; }
 .camera-grid span { border: 1px solid var(--cyan); padding: 3px; font-size: clamp(9px, 2.4vw, 13px); text-shadow: 0 1px 3px black, 0 0 4px black; color: white; background: transparent; }
 #cameraDialog::backdrop { backdrop-filter: none; }
 .camera-actions { display: flex; align-items: center; gap: 16px; }
+.road-types { margin: 18px 0 0; padding: 14px; border: 1px solid var(--line); border-radius: 13px; display: flex; flex-wrap: wrap; gap: 14px; }
+.road-types legend { padding: 0 5px; }
+.road-types small { color: var(--muted); font-size: .75rem; }
+.road-types label { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; }
+.road-types input { width: 20px; height: 20px; accent-color: var(--cyan); }
+.metric-field { min-width: 0; }
+.metric-field > span:first-child { overflow-wrap: anywhere; }
+
+@media (orientation: landscape) and (max-height: 600px) {
+  #cameraDialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); overflow: hidden; }
+  #cameraDialog[open] { display: grid; grid-template-columns: minmax(0, 1fr) 164px; grid-template-rows: auto minmax(0, 1fr) auto auto; gap: 8px 12px; }
+  #cameraTitle { grid-column: 1 / -1; font-size: 1.1rem; margin: 0; }
+  #cameraTitle + p { display: none; }
+  .camera-stage { grid-column: 1; grid-row: 2 / 5; aspect-ratio: auto; height: 100%; min-height: 0; }
+  .camera-grid { width: min(90%, calc((100dvh - 64px) * 2.5)); left: 50%; transform: translate(-50%, -50%); }
+  .camera-grid span { font-size: 12px; }
+  #cameraStatus { grid-column: 2; grid-row: 2; align-self: center; margin: 0; font-size: .8rem; overflow: auto; max-height: 100%; }
+  .camera-actions { grid-column: 2; grid-row: 3; flex-direction: column; gap: 6px; }
+  .camera-actions button { width: 100%; min-height: 44px; }
+  #cameraCapture { padding: 10px; font-size: .85rem; }
+  #cameraRetry { grid-column: 2; grid-row: 4; min-height: 44px; }
+}
 button, label[for] { -webkit-tap-highlight-color: transparent; }
 button { color: inherit; }
 

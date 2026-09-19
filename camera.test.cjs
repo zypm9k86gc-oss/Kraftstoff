@@ -25,3 +25,10 @@ vm.runInContext(source.slice(source.indexOf('function cameraReady('),source.inde
 lifecycle.cameraReady();assert.equal(controls['#cameraCapture'].disabled,true);
 lifecycle.cameraVideo.paused=false;lifecycle.cameraReady();assert.equal(controls['#cameraCapture'].disabled,false);
 console.log('Capture remains disabled until video is playing');
+// Wide camera stage after rotating an iPhone: overlay must map to the same source area.
+const wide=context.cameraSourceRect(1920,1080,640,300,{x:32,y:34.8,width:576,height:230.4});
+assert.ok(Math.abs(wide.x-96)<.001);
+assert.ok(Math.abs(wide.y-194.4)<.001);
+assert.ok(Math.abs(wide.width-1728)<.001);
+assert.ok(Math.abs(wide.height-691.2)<.001);
+console.log('Landscape viewport crop mapping passed');

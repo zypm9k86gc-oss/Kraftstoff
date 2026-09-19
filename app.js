@@ -577,6 +577,7 @@ function tripFromForm() {
     accEnabled,
     accSpeed: accEnabled ? accSpeed : null,
     traffic: $("#traffic").value,
+    roadTypes: ["Motorway", "Country", "City"].filter(type => $("#road" + type).checked),
     date: elements.date.value,
     name: elements.name.value.trim() || "Fahrt",
     distance,
@@ -610,6 +611,9 @@ function editTrip(id) {
   $("#accEnabled").checked = Boolean(trip.accEnabled);
   $("#accSpeed").value = trip.accSpeed ?? "";
   $("#traffic").value = ["0", "+", "++"].includes(trip.traffic) ? trip.traffic : "";
+  ["Motorway", "Country", "City"].forEach(type => {
+    $("#road" + type).checked = Array.isArray(trip.roadTypes) && trip.roadTypes.includes(type);
+  });
   syncACC();
   state.imageData = trip.image || "";
   if (state.imageData) {
@@ -674,6 +678,7 @@ function renderTrips() {
         <strong>${escapeHTML(trip.name)}</strong>
         <span>${formatNumber(trip.distance, 1)} km · ${formatNumber(trip.consumption, 1)} l/100 · ${formatDuration(trip.durationMinutes)} · Ø ${formatNumber(trip.averageSpeed, 0)} km/h · ${date}</span>
         <span>${trip.accEnabled ? `ACC ${formatNumber(trip.accSpeed, 0)} km/h` : "ACC –"} · Verkehr ${escapeHTML(trip.traffic || "–")}</span>
+        <span>Fahrstrecke: ${["Motorway", "Country", "City"].filter(type => Array.isArray(trip.roadTypes) && trip.roadTypes.includes(type)).map(type => ({Motorway:"Autobahn", Country:"Landstraße", City:"Stadt"})[type]).join(" · ") || "–"}</span>
       </div>
       <div class="trip-score"><strong>${formatNumber(trip.fei, 1)}</strong><small>FEI</small></div>
       <div class="trip-actions"><button class="small-button" type="button" data-edit="${escapeHTML(trip.id)}" aria-label="${escapeHTML(trip.name)} bearbeiten">Bearbeiten</button>

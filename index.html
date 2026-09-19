@@ -108,11 +108,7 @@
 
               <div class="metric-fields">
                 <label class="field metric-field">
-                  <span>Strecke</span>
-                  <span class="input-unit"><input id="distance" name="distance" inputmode="decimal" placeholder="2204,0" required /><b>km</b></span>
-                </label>
-                <label class="field metric-field">
-                  <span>Verbrauch</span>
+                  <span>Durchschnittsverbrauch</span>
                   <span class="input-unit"><input id="consumption" name="consumption" inputmode="decimal" placeholder="11,8" required /><b>l/100</b></span>
                 </label>
                 <label class="field metric-field">
@@ -120,8 +116,12 @@
                   <span class="input-unit"><input id="duration" name="duration" type="text" inputmode="text" placeholder="29:07" pattern="[0-9]{1,3}:[0-5][0-9]" required /><b>hh:mm</b></span>
                 </label>
                 <label class="field metric-field">
-                  <span>Ø-Tempo <em>optional</em></span>
+                  <span>Durchschnittsgeschwindigkeit <em>optional</em></span>
                   <span class="input-unit"><input id="averageSpeed" name="averageSpeed" inputmode="numeric" placeholder="76" /><b>km/h</b></span>
+                </label>
+                <label class="field metric-field">
+                  <span>Fahrstrecke</span>
+                  <span class="input-unit"><input id="distance" name="distance" inputmode="decimal" placeholder="2204,0" required /><b>km</b></span>
                 </label>
               </div>
 
@@ -136,6 +136,13 @@
                   <select id="traffic"><option value="">Bitte wählen</option><option value="0">0</option><option value="+">+</option><option value="++">++</option></select>
                 </label>
               </div>
+
+              <fieldset class="road-types">
+                <legend>Fahrstrecke <small>Mehrfachauswahl möglich</small></legend>
+                <label><input id="roadMotorway" type="checkbox" /> Autobahn</label>
+                <label><input id="roadCountry" type="checkbox" /> Landstraße</label>
+                <label><input id="roadCity" type="checkbox" /> Stadt</label>
+              </fieldset>
 
               <div class="score-preview" id="scorePreview">
                 <div class="score-ring" id="scoreRing" style="--score-angle: 0deg">
